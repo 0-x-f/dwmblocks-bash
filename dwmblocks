@@ -1,0 +1,83 @@
+#!/bin/bash
+
+# Any command (include scripts), which can be executed from /bin/bash
+declare -r -a blocks=(
+	"sb-memory"
+	"sb-volume"
+	"sb-layout"
+	"sb-date"
+	"sb-time"
+)
+
+# How many time does it take between executing blocks (in seconds)
+# 0 means "not update"
+declare -r -a intervals=(
+        1 0 0 60 1
+)
+
+# Signal for updating one of the blocks
+# SID must be between 1 and 31
+declare -r -a signals=(
+        1 2 3 4 5
+)
+
+declare -r separator=""
+
+# Because the first 33 signals are reversed, handled codes between 34 and 64
+# more info: /bin/bash -c "kill -l"
+# For other shell script must be changed
+declare -r -i signal_min=33
+
+declare -a blocks_cache
+declare -r -i blocks_length=${#blocks[@]}
+
+# Function, called by command like "kill -SID PID"
+handle_trap() {
+	blocks_cache[$1]="`${blocks[$1]}`"
+}
+
+set_signals() {
+	for (( i=0; i<$blocks_length; i++ )) do
+		if [[ ${signals[i]} = 0 ]]; then
+			continue
+		fi
+
+		trap "handle_trap $i" $(expr $signal_min + ${signals[i]})
+        done
+}
+
+# https://stackoverflow.com/a/17841619
+join_by() {
+  local d=${1-} f=${2-}
+  if shift 2; then
+    printf %s "$f" "${@/#/$d}"
+  fi
+}
+
+update_status() {
+	for (( i=0; i<$blocks_length; i++ )) do
+		blocks_cache+=("`${blocks[i]}`")
+	done
+
+	declare -i time=0
+
+	while true; do
+		for (( i=0; i < "$blocks_length"; i++ )) do
+			if [[ ${intervals[i]} = 0 ]]; then
+				continue
+			fi
+
+			if [[ $(expr $time % ${intervals[i]}) = 0 ]]; then
+				blocks_cache[i]="`${blocks[i]}`"
+			fi
+		done
+
+		declare status_bar=$(join_by "$separator" "${blocks_cache[@]}")
+		
+		xsetroot -name "$status_bar" & sleep 1
+		time+=1
+	done
+}
+
+set_signals
+update_status
